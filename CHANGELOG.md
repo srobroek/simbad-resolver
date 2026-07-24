@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/nightwatch-astro/simbad-resolver/compare/simbad-resolver-v0.4.0...simbad-resolver-v0.5.0) (2026-07-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** migrate to reqwest 0.13 ([#41](https://github.com/nightwatch-astro/simbad-resolver/issues/41))
+
+### Bug Fixes
+
+* **deps:** migrate to reqwest 0.13 ([#41](https://github.com/nightwatch-astro/simbad-resolver/issues/41)) ([1984706](https://github.com/nightwatch-astro/simbad-resolver/commit/1984706ad7ec39ff4761bdb9ca37ea996545e378))
+
 ## [0.4.0](https://github.com/nightwatch-astro/simbad-resolver/compare/simbad-resolver-v0.3.5...simbad-resolver-v0.4.0) (2026-07-22)
 
 
