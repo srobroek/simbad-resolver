@@ -9,7 +9,6 @@ dependencies:
   - srobroek/agentic-packages/packages/orchestrate#main
   - srobroek/agentic-packages/packages/release-please#main
   - srobroek/agentic-packages/packages/speckit#main
-  - srobroek/agentic-packages/packages/steering-speckit#main
   - srobroek/agentic-packages/packages/language-rust#main
   - srobroek/agentic-packages/packages/language-steering-rust#main
   - srobroek/agentic-packages/packages/rust-quality#main
