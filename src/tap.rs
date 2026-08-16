@@ -18,7 +18,8 @@
 //! 1. `basic ⋈ ident`, `LEFT OUTER JOIN allfluxes`, to find the object(s) whose
 //!    `ident.id` matches the query (verbatim and whitespace-collapsed) and pull
 //!    `oid, main_id, ra, dec, otype_txt, V` (V-band magnitude, `NULL` when the
-//!    object has no V photometry).
+//!    object has no V photometry) plus `galdim_majaxis`, `galdim_minaxis`
+//!    (arcminutes) and `galdim_angle` (degrees), `NULL` for a point source.
 //! 2. `ident` for the winning `oid` to pull the full alias set, where
 //!    `NAME …` rows are curated common names.
 //!
@@ -190,8 +191,11 @@ impl TapResolver {
         // `allfluxes` is 1:1 with `basic` (LEFT OUTER JOIN → V is NULL when the
         // object has no V photometry, so the object still resolves). `V` is
         // uppercase: `allfluxes` is SIMBAD's one case-sensitive table.
+        // `galdim_majaxis`/`galdim_minaxis`/`galdim_angle` live directly on
+        // `basic` and are NULL for a point source (e.g. a star) — no join needed.
         let q = format!(
-            "SELECT DISTINCT b.oid, b.main_id, b.ra, b.dec, b.otype_txt, f.V \
+            "SELECT DISTINCT b.oid, b.main_id, b.ra, b.dec, b.otype_txt, f.V, \
+             b.galdim_majaxis, b.galdim_minaxis, b.galdim_angle \
              FROM basic AS b JOIN ident AS i ON i.oidref = b.oid \
              LEFT OUTER JOIN allfluxes AS f ON f.oidref = b.oid \
              WHERE i.id IN ({list}) AND b.ra IS NOT NULL AND b.dec IS NOT NULL"
@@ -223,7 +227,7 @@ impl Resolver for TapResolver {
         match objects.len() {
             0 => Err(ResolveError::NotFound(query.to_owned())),
             1 => {
-                let (oid, main_id, ra_deg, dec_deg, otype_raw, v_mag) =
+                let (oid, main_id, ra_deg, dec_deg, otype_raw, v_mag, majaxis, minaxis, angle) =
                     objects.into_iter().next().expect("len == 1 checked above");
                 let (aliases, common_name) = self.fetch_aliases(oid).await?;
                 Ok(assemble_identity(
@@ -233,6 +237,9 @@ impl Resolver for TapResolver {
                     dec_deg,
                     &otype_raw,
                     v_mag,
+                    majaxis,
+                    minaxis,
+                    angle,
                     aliases,
                     common_name,
                 ))
@@ -253,6 +260,7 @@ impl PositionResolver for TapResolver {
     ) -> Result<Vec<PositionMatch>, ResolveError> {
         let q = format!(
             "SELECT TOP {limit} b.oid, b.main_id, b.ra, b.dec, b.otype_txt, f.V, \
+             b.galdim_majaxis, b.galdim_minaxis, b.galdim_angle, \
              DISTANCE(POINT('ICRS', b.ra, b.dec), POINT('ICRS', {ra_deg}, {dec_deg})) AS dist \
              FROM basic AS b \
              LEFT OUTER JOIN allfluxes AS f ON f.oidref = b.oid \
@@ -263,20 +271,25 @@ impl PositionResolver for TapResolver {
         let body = self.tap_query(&q).await?;
         Ok(parse_position_rows(&body)
             .into_iter()
-            .map(|(oid, main_id, ra, dec, otype_raw, v_mag, dist)| PositionMatch {
-                // No second alias round-trip for a cone hit: `assemble_identity`
-                // still includes the primary designation in the alias set.
-                identity: assemble_identity(
-                    oid,
-                    &main_id,
-                    ra,
-                    dec,
-                    &otype_raw,
-                    v_mag,
-                    Vec::new(),
-                    None,
-                ),
-                separation_deg: dist,
+            .map(|(oid, main_id, ra, dec, otype_raw, v_mag, majaxis, minaxis, angle, dist)| {
+                PositionMatch {
+                    // No second alias round-trip for a cone hit: `assemble_identity`
+                    // still includes the primary designation in the alias set.
+                    identity: assemble_identity(
+                        oid,
+                        &main_id,
+                        ra,
+                        dec,
+                        &otype_raw,
+                        v_mag,
+                        majaxis,
+                        minaxis,
+                        angle,
+                        Vec::new(),
+                        None,
+                    ),
+                    separation_deg: dist,
+                }
             })
             .collect())
     }
@@ -284,10 +297,12 @@ impl PositionResolver for TapResolver {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-/// A parsed `basic ⋈ allfluxes` row: `(oid, main_id, ra, dec, otype, v_mag)`.
-type BasicRow = (i64, String, f64, f64, String, Option<f64>);
+/// A parsed `basic ⋈ allfluxes` row: `(oid, main_id, ra, dec, otype, v_mag,
+/// galdim_majaxis, galdim_minaxis, galdim_angle)`.
+type BasicRow = (i64, String, f64, f64, String, Option<f64>, Option<f64>, Option<f64>, Option<i16>);
 /// A parsed cone-search row: a [`BasicRow`] plus the trailing angular `dist`.
-type PositionRow = (i64, String, f64, f64, String, Option<f64>, f64);
+type PositionRow =
+    (i64, String, f64, f64, String, Option<f64>, Option<f64>, Option<f64>, Option<i16>, f64);
 
 /// Classify a `reqwest` error into the right [`ResolveError`] so callers can
 /// degrade to seed+cache on transport failure / timeout.
@@ -318,22 +333,24 @@ fn parse_basic_rows(body: &str) -> Vec<BasicRow> {
     tsv_data_lines(body).filter_map(wire::parse_basic_row).collect()
 }
 
-/// Parse one cone-search TSV row (`oid, main_id, ra, dec, otype_txt, V, dist`).
+/// Parse one cone-search TSV row (`oid, main_id, ra, dec, otype_txt, V,
+/// galdim_majaxis, galdim_minaxis, galdim_angle, dist`).
 ///
-/// Reuses [`wire::parse_basic_row`] for the first six columns so the RA/Dec
-/// range validation, V-magnitude, and quoting rules aren't duplicated; only the
-/// trailing `dist` column is parsed here.
+/// Reuses [`wire::parse_basic_row`] for the first nine columns so the RA/Dec
+/// range validation, V-magnitude, galdim, and quoting rules aren't duplicated;
+/// only the trailing `dist` column is parsed here.
 fn parse_position_row(line: &str) -> Option<PositionRow> {
     let fields: Vec<&str> = line.split('\t').collect();
-    if fields.len() < 7 {
+    if fields.len() < 10 {
         return None;
     }
-    let (oid, main_id, ra, dec, otype, v_mag) = wire::parse_basic_row(&fields[..6].join("\t"))?;
-    let dist: f64 = wire::unquote(fields[6]).parse().ok()?;
+    let (oid, main_id, ra, dec, otype, v_mag, majaxis, minaxis, angle) =
+        wire::parse_basic_row(&fields[..9].join("\t"))?;
+    let dist: f64 = wire::unquote(fields[9]).parse().ok()?;
     if !dist.is_finite() || dist < 0.0 {
         return None;
     }
-    Some((oid, main_id, ra, dec, otype, v_mag, dist))
+    Some((oid, main_id, ra, dec, otype, v_mag, majaxis, minaxis, angle, dist))
 }
 
 /// Parse all cone-search rows from a raw TAP TSV body (header stripped).
@@ -378,6 +395,9 @@ fn assemble_identity(
     dec_deg: f64,
     otype_raw: &str,
     v_mag: Option<f64>,
+    galdim_majaxis_arcmin: Option<f64>,
+    galdim_minaxis_arcmin: Option<f64>,
+    galdim_angle_deg: Option<i16>,
     mut aliases: Vec<ResolvedAlias>,
     common_name: Option<String>,
 ) -> ResolvedIdentity {
@@ -392,6 +412,9 @@ fn assemble_identity(
         ra_deg,
         dec_deg,
         v_mag,
+        galdim_majaxis_arcmin,
+        galdim_minaxis_arcmin,
+        galdim_angle_deg,
         aliases,
         source: TargetSource::Resolved,
     }
@@ -410,14 +433,27 @@ mod tests {
     use super::*;
     use crate::ObjectType;
 
-    const M31_BASIC_TSV: &str = "oid\tmain_id\tra\tdec\totype_txt\tV\n\
-        1575544\t\"M  31\"\t10.6847083\t41.26875\t\"G\"\t3.44\n";
+    const M31_BASIC_TSV: &str =
+        "oid\tmain_id\tra\tdec\totype_txt\tV\tgaldim_majaxis\tgaldim_minaxis\tgaldim_angle\n\
+        1575544\t\"M  31\"\t10.6847083\t41.26875\t\"G\"\t3.44\t199.53\t70.79\t35\n";
 
-    const AMBIGUOUS_BASIC_TSV: &str = "oid\tmain_id\tra\tdec\totype_txt\tV\n\
-        1575544\t\"M  31\"\t10.6847083\t41.26875\t\"G\"\t3.44\n\
-        999999\t\"Some Other\"\t11.0\t42.0\t\"G\"\t\n";
+    /// M 57: a near-circular planetary nebula, equal major/minor axes.
+    const M57_BASIC_TSV: &str =
+        "oid\tmain_id\tra\tdec\totype_txt\tV\tgaldim_majaxis\tgaldim_minaxis\tgaldim_angle\n\
+        1560141\t\"M  57\"\t283.3963\t33.0292\t\"PN\"\t8.79\t1.153\t1.153\t90\n";
 
-    const EMPTY_BASIC_TSV: &str = "oid\tmain_id\tra\tdec\totype_txt\tV\n";
+    /// Vega: a point source, no galdim measurement at all → NULL/empty columns.
+    const VEGA_BASIC_TSV: &str =
+        "oid\tmain_id\tra\tdec\totype_txt\tV\tgaldim_majaxis\tgaldim_minaxis\tgaldim_angle\n\
+        3672809\t\"* alf Lyr\"\t279.2347\t38.7837\t\"*\"\t0.03\t\t\t\n";
+
+    const AMBIGUOUS_BASIC_TSV: &str =
+        "oid\tmain_id\tra\tdec\totype_txt\tV\tgaldim_majaxis\tgaldim_minaxis\tgaldim_angle\n\
+        1575544\t\"M  31\"\t10.6847083\t41.26875\t\"G\"\t3.44\t199.53\t70.79\t35\n\
+        999999\t\"Some Other\"\t11.0\t42.0\t\"G\"\t\t\t\t\n";
+
+    const EMPTY_BASIC_TSV: &str =
+        "oid\tmain_id\tra\tdec\totype_txt\tV\tgaldim_majaxis\tgaldim_minaxis\tgaldim_angle\n";
 
     const M31_ALIAS_TSV: &str = "id\n\
         \"M   31\"\n\
@@ -425,9 +461,10 @@ mod tests {
         \"NAME Andromeda Galaxy\"\n\
         \"NAME  Andromeda Nebula\"\n";
 
-    const M31_POSITION_TSV: &str = "oid\tmain_id\tra\tdec\totype_txt\tV\tdist\n\
-        1575544\t\"M  31\"\t10.6847083\t41.26875\t\"G\"\t3.44\t0.001\n\
-        222\t\"NGC 206\"\t10.9\t40.7\t\"OpC\"\t\t0.6\n";
+    const M31_POSITION_TSV: &str =
+        "oid\tmain_id\tra\tdec\totype_txt\tV\tgaldim_majaxis\tgaldim_minaxis\tgaldim_angle\tdist\n\
+        1575544\t\"M  31\"\t10.6847083\t41.26875\t\"G\"\t3.44\t199.53\t70.79\t35\t0.001\n\
+        222\t\"NGC 206\"\t10.9\t40.7\t\"OpC\"\t\t\t\t\t0.6\n";
 
     const VOTABLE_ERROR_BODY: &str = "<VOTABLE version=\"1.4\"><RESOURCE type=\"results\">\
         <INFO name=\"QUERY_STATUS\" value=\"ERROR\">syntax error</INFO></RESOURCE></VOTABLE>";
@@ -436,7 +473,7 @@ mod tests {
     fn parse_basic_rows_extracts_one_object() {
         let rows = parse_basic_rows(M31_BASIC_TSV);
         assert_eq!(rows.len(), 1);
-        let (oid, main_id, ra, dec, otype, v_mag) = &rows[0];
+        let (oid, main_id, ra, dec, otype, v_mag, majaxis, minaxis, angle) = &rows[0];
         assert_eq!(*oid, 1_575_544);
         assert_eq!(main_id, "M  31");
         assert!((ra - 10.684_708_3).abs() < 1e-6);
@@ -444,6 +481,32 @@ mod tests {
         assert_eq!(otype, "G");
         assert_eq!(map_otype(otype), ObjectType::Galaxy);
         assert_eq!(*v_mag, Some(3.44));
+        assert_eq!(*majaxis, Some(199.53));
+        assert_eq!(*minaxis, Some(70.79));
+        assert_eq!(*angle, Some(35));
+    }
+
+    #[test]
+    fn parse_basic_rows_equal_axes_object() {
+        let rows = parse_basic_rows(M57_BASIC_TSV);
+        assert_eq!(rows.len(), 1);
+        let (.., majaxis, minaxis, angle) = &rows[0];
+        assert_eq!(*majaxis, Some(1.153));
+        assert_eq!(*minaxis, Some(1.153));
+        assert_eq!(*angle, Some(90));
+    }
+
+    #[test]
+    fn parse_basic_rows_point_source_has_no_galdim() {
+        // A point source (Vega) must read back None, never 0.0/0 — SIMBAD
+        // genuinely has no angular-size measurement for it, distinct from a
+        // measured-small value.
+        let rows = parse_basic_rows(VEGA_BASIC_TSV);
+        assert_eq!(rows.len(), 1);
+        let (.., majaxis, minaxis, angle) = &rows[0];
+        assert_eq!(*majaxis, None);
+        assert_eq!(*minaxis, None);
+        assert_eq!(*angle, None);
     }
 
     #[test]
@@ -480,6 +543,9 @@ mod tests {
             41.268_75,
             "G",
             Some(3.44),
+            Some(199.53),
+            Some(70.79),
+            Some(35),
             aliases,
             common_name,
         );
@@ -488,6 +554,9 @@ mod tests {
         assert_eq!(identity.object_type, ObjectType::Galaxy);
         assert_eq!(identity.otype_raw, "G");
         assert_eq!(identity.v_mag, Some(3.44));
+        assert_eq!(identity.galdim_majaxis_arcmin, Some(199.53));
+        assert_eq!(identity.galdim_minaxis_arcmin, Some(70.79));
+        assert_eq!(identity.galdim_angle_deg, Some(35));
         assert_eq!(identity.common_name.as_deref(), Some("Andromeda Galaxy"));
         assert_eq!(identity.source, TargetSource::Resolved);
         // "M 31" is already present from the alias round-trip (as "M   31"
@@ -499,12 +568,27 @@ mod tests {
     fn assemble_identity_adds_primary_designation_when_alias_list_is_empty() {
         // Mirrors a cone-search hit: no alias round-trip, so the only alias is
         // the primary designation.
-        let identity = assemble_identity(42, "NGC 206", 10.9, 40.7, "OpC", None, Vec::new(), None);
+        let identity = assemble_identity(
+            42,
+            "NGC 206",
+            10.9,
+            40.7,
+            "OpC",
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        );
         assert_eq!(identity.aliases.len(), 1);
         assert_eq!(identity.aliases[0].alias, "NGC 206");
         assert_eq!(identity.aliases[0].kind, AliasKind::Designation);
         assert_eq!(identity.object_type, ObjectType::OpenCluster);
         assert_eq!(identity.v_mag, None);
+        assert_eq!(identity.galdim_majaxis_arcmin, None);
+        assert_eq!(identity.galdim_minaxis_arcmin, None);
+        assert_eq!(identity.galdim_angle_deg, None);
     }
 
     #[test]
@@ -513,10 +597,14 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0, 1_575_544);
         assert_eq!(rows[0].5, Some(3.44));
-        assert!((rows[0].6 - 0.001).abs() < 1e-9);
+        assert_eq!(rows[0].6, Some(199.53), "M 31 major axis carried through the cone search");
+        assert_eq!(rows[0].7, Some(70.79));
+        assert_eq!(rows[0].8, Some(35));
+        assert!((rows[0].9 - 0.001).abs() < 1e-9);
         assert_eq!(rows[1].0, 222);
         assert_eq!(rows[1].5, None, "NGC 206 has no V mag → empty column → None");
-        assert!((rows[1].6 - 0.6).abs() < 1e-9);
+        assert_eq!(rows[1].6, None, "NGC 206 has no galdim measurement → None");
+        assert!((rows[1].9 - 0.6).abs() < 1e-9);
     }
 
     #[test]

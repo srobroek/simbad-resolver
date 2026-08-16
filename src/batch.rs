@@ -59,6 +59,9 @@ pub struct DrainSummary {
 ///     ra_deg: 10.684_708,
 ///     dec_deg: 41.268_75,
 ///     v_mag: Some(3.44),
+///     galdim_majaxis_arcmin: Some(199.53),
+///     galdim_minaxis_arcmin: Some(70.79),
+///     galdim_angle_deg: Some(35),
 ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
 ///     source: TargetSource::Seed,
 /// };

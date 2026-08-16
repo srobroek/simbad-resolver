@@ -229,8 +229,12 @@ fn build_identity(hit: &SesameHit, query: &str) -> ResolvedIdentity {
         otype_raw,
         ra_deg: hit.ra_deg,
         dec_deg: hit.dec_deg,
-        // Sesame is a name→position service and carries no photometry.
+        // Sesame is a name→position service and carries no photometry or
+        // angular-size data — only TAP (`basic.galdim_*`) supplies that.
         v_mag: None,
+        galdim_majaxis_arcmin: None,
+        galdim_minaxis_arcmin: None,
+        galdim_angle_deg: None,
         aliases,
         source: TargetSource::Resolved,
     }
@@ -287,6 +291,9 @@ mod tests {
             ra_deg: 10.684_708,
             dec_deg: 41.268_75,
             v_mag: None,
+            galdim_majaxis_arcmin: None,
+            galdim_minaxis_arcmin: None,
+            galdim_angle_deg: None,
             aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
             source: TargetSource::Resolved,
         }
@@ -302,6 +309,9 @@ mod tests {
             ra_deg: 10.684_708,
             dec_deg: 41.268_75,
             v_mag: Some(3.44),
+            galdim_majaxis_arcmin: Some(199.53),
+            galdim_minaxis_arcmin: Some(70.79),
+            galdim_angle_deg: Some(35),
             aliases: vec![
                 ResolvedAlias::new("M 31", AliasKind::Designation),
                 ResolvedAlias::new("NGC 224", AliasKind::Designation),

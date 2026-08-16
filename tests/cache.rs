@@ -31,6 +31,9 @@ fn m31(source: TargetSource) -> ResolvedIdentity {
         ra_deg: 10.684_708,
         dec_deg: 41.268_75,
         v_mag: Some(3.44),
+        galdim_majaxis_arcmin: Some(199.53),
+        galdim_minaxis_arcmin: Some(70.79),
+        galdim_angle_deg: Some(35),
         aliases: vec![
             ResolvedAlias::new("M 31", AliasKind::Designation),
             ResolvedAlias::new("NGC 224", AliasKind::Designation),
@@ -50,6 +53,9 @@ fn m101() -> ResolvedIdentity {
         ra_deg: 210.802_42,
         dec_deg: 54.348_95,
         v_mag: Some(7.86),
+        galdim_majaxis_arcmin: None,
+        galdim_minaxis_arcmin: None,
+        galdim_angle_deg: None,
         aliases: vec![
             ResolvedAlias::new("M 101", AliasKind::Designation),
             ResolvedAlias::new("NGC 5457", AliasKind::Designation),
@@ -283,6 +289,9 @@ async fn upsert_batch_of_ten_thousand_completes_well_under_a_generous_bound() {
                 ra_deg: f64::from(idx % 360),
                 dec_deg: 0.0,
                 v_mag: None,
+                galdim_majaxis_arcmin: None,
+                galdim_minaxis_arcmin: None,
+                galdim_angle_deg: None,
                 aliases: vec![ResolvedAlias::new(designation, AliasKind::Designation)],
                 source: TargetSource::Seed,
             }

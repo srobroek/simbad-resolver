@@ -81,6 +81,22 @@ struct StoredTarget {
     /// written before this field existed still deserialize (as `None`).
     #[serde(default)]
     v_mag: Option<f64>,
+    /// Angular major-axis diameter, arcminutes, unconverted. `#[serde(default)]`
+    /// for the same forward-compat reason as `v_mag`: a row written before this
+    /// field existed still deserializes, reading back as `None` (not `0.0`) so
+    /// "no measurement" is never conflated with "measured as zero". See
+    /// `galdim_pre_upgrade_row_deserializes_with_none` for the read-old-write-new
+    /// proof.
+    #[serde(default)]
+    galdim_majaxis_arcmin: Option<f64>,
+    /// Angular minor-axis diameter, arcminutes, unconverted. Same
+    /// `#[serde(default)]` compat rule as [`Self::galdim_majaxis_arcmin`].
+    #[serde(default)]
+    galdim_minaxis_arcmin: Option<f64>,
+    /// Position angle of the major axis, degrees, unconverted. Same
+    /// `#[serde(default)]` compat rule as [`Self::galdim_majaxis_arcmin`].
+    #[serde(default)]
+    galdim_angle_deg: Option<i16>,
     source: TargetSource,
     resolved_at: String,
 }
@@ -96,6 +112,9 @@ impl StoredTarget {
             ra_deg: identity.ra_deg,
             dec_deg: identity.dec_deg,
             v_mag: identity.v_mag,
+            galdim_majaxis_arcmin: identity.galdim_majaxis_arcmin,
+            galdim_minaxis_arcmin: identity.galdim_minaxis_arcmin,
+            galdim_angle_deg: identity.galdim_angle_deg,
             source: identity.source,
             resolved_at: now_iso(),
         }
@@ -112,6 +131,9 @@ impl StoredTarget {
             ra_deg: self.ra_deg,
             dec_deg: self.dec_deg,
             v_mag: self.v_mag,
+            galdim_majaxis_arcmin: self.galdim_majaxis_arcmin,
+            galdim_minaxis_arcmin: self.galdim_minaxis_arcmin,
+            galdim_angle_deg: self.galdim_angle_deg,
             source: self.source,
             resolved_at: self.resolved_at,
             aliases,
@@ -1130,6 +1152,9 @@ mod tests {
             ra_deg: 10.684_708,
             dec_deg: 41.268_75,
             v_mag: Some(3.44),
+            galdim_majaxis_arcmin: Some(199.53),
+            galdim_minaxis_arcmin: Some(70.79),
+            galdim_angle_deg: Some(35),
             aliases: vec![
                 ResolvedAlias::new("M 31", AliasKind::Designation),
                 ResolvedAlias::new("NGC 224", AliasKind::Designation),
@@ -1197,6 +1222,9 @@ mod tests {
                     ra_deg: f64::from(idx % 360),
                     dec_deg: 0.0,
                     v_mag: None,
+                    galdim_majaxis_arcmin: None,
+                    galdim_minaxis_arcmin: None,
+                    galdim_angle_deg: None,
                     aliases: vec![ResolvedAlias::new(designation, AliasKind::Designation)],
                     source: TargetSource::Seed,
                 }
@@ -1317,5 +1345,50 @@ mod tests {
         assert_eq!(outcomes2[0].0, outcomes2[1].0, "same derived id, same row");
         let got2 = cache.get_by_id(outcomes2[1].0).await.unwrap().unwrap();
         assert!((got2.dec_deg - 12.5).abs() < f64::EPSILON, "batch entry 1's value won");
+    }
+
+    /// Proves the cache-compatibility mechanism for the galdim fields: a
+    /// `targets` row written by a pre-galdim build has no
+    /// `galdim_majaxis_arcmin`/`galdim_minaxis_arcmin`/`galdim_angle_deg` keys
+    /// in its JSON blob at all. `#[serde(default)]` on those `StoredTarget`
+    /// fields (the same mechanism `v_mag` already relies on, see its own
+    /// doc comment) must let this deserialize as `None` rather than failing to
+    /// load or silently corrupting the row. This writes the OLD shape directly
+    /// into the `targets` table, bypassing `upsert`/`StoredTarget` entirely, so
+    /// the test can't accidentally exercise the new (already-compatible) write
+    /// path instead of proving the old-row read path.
+    #[tokio::test]
+    async fn galdim_pre_upgrade_row_deserializes_with_none() {
+        let _guard = TXN_COUNT_GUARD.lock().await;
+        let store = Store::in_memory().unwrap();
+        let id = Uuid::new_v4();
+
+        let pre_upgrade_row = serde_json::json!({
+            "simbad_oid": 1_575_544,
+            "primary_designation": "M 31",
+            "common_name": "Andromeda Galaxy",
+            "object_type": "galaxy",
+            "otype_raw": "G",
+            "ra_deg": 10.684_708,
+            "dec_deg": 41.268_75,
+            "v_mag": 3.44,
+            "source": "resolved",
+            "resolved_at": "2026-07-11T00:00:00Z",
+        });
+        let bytes = serde_json::to_vec(&pre_upgrade_row).unwrap();
+        let w = store.db.begin_write().unwrap();
+        {
+            let mut table = w.open_table(TARGETS).unwrap();
+            table.insert(id.to_string().as_str(), bytes.as_slice()).unwrap();
+        }
+        w.commit().unwrap();
+
+        let target =
+            store.cache().get_by_id(id).await.unwrap().expect("pre-upgrade row still loads");
+        assert_eq!(target.primary_designation, "M 31");
+        assert_eq!(target.v_mag, Some(3.44), "a field that existed pre-upgrade is unaffected");
+        assert_eq!(target.galdim_majaxis_arcmin, None, "absent key deserializes as None, not 0.0");
+        assert_eq!(target.galdim_minaxis_arcmin, None);
+        assert_eq!(target.galdim_angle_deg, None);
     }
 }

@@ -43,6 +43,15 @@ pub struct CachedTarget {
     pub dec_deg: f64,
     /// Johnson V-band apparent magnitude (SIMBAD `allfluxes.V`) when known.
     pub v_mag: Option<f64>,
+    /// Angular major-axis diameter in arcminutes, unconverted; `None` for a
+    /// point source.
+    pub galdim_majaxis_arcmin: Option<f64>,
+    /// Angular minor-axis diameter in arcminutes, unconverted; `None` under the
+    /// same condition as [`Self::galdim_majaxis_arcmin`].
+    pub galdim_minaxis_arcmin: Option<f64>,
+    /// Position angle of the major axis in degrees, unconverted; `None` under
+    /// the same condition as [`Self::galdim_majaxis_arcmin`].
+    pub galdim_angle_deg: Option<i16>,
     /// Provenance of the stored identity.
     pub source: TargetSource,
     /// RFC 3339 timestamp of the last seed/resolve/override.
@@ -68,6 +77,9 @@ impl CachedTarget {
     ///     ra_deg: 10.684_708,
     ///     dec_deg: 41.268_75,
     ///     v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: Some(199.53),
+    ///     galdim_minaxis_arcmin: Some(70.79),
+    ///     galdim_angle_deg: Some(35),
     ///     source: TargetSource::Resolved,
     ///     resolved_at: "2026-07-11T00:00:00Z".to_owned(),
     ///     aliases: vec![ResolvedAlias::new("NGC 224", AliasKind::Designation)],
@@ -87,6 +99,9 @@ impl CachedTarget {
             ra_deg: self.ra_deg,
             dec_deg: self.dec_deg,
             v_mag: self.v_mag,
+            galdim_majaxis_arcmin: self.galdim_majaxis_arcmin,
+            galdim_minaxis_arcmin: self.galdim_minaxis_arcmin,
+            galdim_angle_deg: self.galdim_angle_deg,
             aliases: self.aliases.clone(),
             source: self.source,
         }
@@ -112,6 +127,7 @@ impl CachedTarget {
     ///     id: Uuid::nil(), simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     source: TargetSource::Resolved, resolved_at: "2026-07-11T00:00:00Z".to_owned(),
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     /// };
@@ -279,6 +295,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -300,6 +317,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -324,6 +342,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -351,6 +370,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -376,6 +396,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -412,6 +433,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -451,6 +473,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -491,6 +514,7 @@ pub trait Cache: Send + Sync {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Seed,
     /// };
@@ -653,6 +677,9 @@ mod tests {
             ra_deg: 10.684_708,
             dec_deg: 41.268_75,
             v_mag: Some(3.44),
+            galdim_majaxis_arcmin: Some(199.53),
+            galdim_minaxis_arcmin: Some(70.79),
+            galdim_angle_deg: Some(35),
             source: TargetSource::Resolved,
             resolved_at: "2026-07-11T00:00:00Z".to_owned(),
             aliases: vec![ResolvedAlias::new("NGC 224", AliasKind::Designation)],
@@ -665,6 +692,9 @@ mod tests {
         assert_eq!(identity.object_type, ObjectType::Galaxy);
         assert_eq!(identity.otype_raw, "G");
         assert_eq!(identity.v_mag, Some(3.44));
+        assert_eq!(identity.galdim_majaxis_arcmin, Some(199.53));
+        assert_eq!(identity.galdim_minaxis_arcmin, Some(70.79));
+        assert_eq!(identity.galdim_angle_deg, Some(35));
         assert!((identity.ra_deg - 10.684_708).abs() < f64::EPSILON);
         assert_eq!(identity.source, TargetSource::Resolved);
         assert_eq!(identity.aliases, target.aliases);

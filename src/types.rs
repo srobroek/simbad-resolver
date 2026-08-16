@@ -366,6 +366,9 @@ impl ResolvedAlias {
 ///     ra_deg: 10.684_708,
 ///     dec_deg: 41.268_75,
 ///     v_mag: Some(3.44),
+///     galdim_majaxis_arcmin: Some(199.53),
+///     galdim_minaxis_arcmin: Some(70.79),
+///     galdim_angle_deg: Some(35),
 ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
 ///     source: TargetSource::Resolved,
 /// };
@@ -397,6 +400,20 @@ pub struct ResolvedIdentity {
     /// has V photometry; `None` otherwise. Many extended/dark objects and
     /// seed/override-only entries have no V magnitude.
     pub v_mag: Option<f64>,
+    /// Angular major-axis diameter in arcminutes (SIMBAD `basic.galdim_majaxis`),
+    /// unconverted. `None` for a point source (e.g. a star), which genuinely has
+    /// no measured angular size — never assume `0.0`.
+    pub galdim_majaxis_arcmin: Option<f64>,
+    /// Angular minor-axis diameter in arcminutes (SIMBAD `basic.galdim_minaxis`),
+    /// unconverted. `None` under the same condition as
+    /// [`Self::galdim_majaxis_arcmin`]; a circular object (e.g. a globular
+    /// cluster) reports equal major/minor axes rather than omitting the minor
+    /// one.
+    pub galdim_minaxis_arcmin: Option<f64>,
+    /// Position angle of the major axis in degrees (SIMBAD `basic.galdim_angle`),
+    /// unconverted. `None` under the same condition as
+    /// [`Self::galdim_majaxis_arcmin`].
+    pub galdim_angle_deg: Option<i16>,
     /// All designations + common names for this object (the typeahead surface).
     pub aliases: Vec<ResolvedAlias>,
     /// Provenance of this identity.
@@ -425,6 +442,7 @@ impl ResolvedIdentity {
     /// #     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     /// #     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     /// #     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    /// #     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     /// #     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     /// #     source: TargetSource::Resolved,
     /// # };
@@ -467,6 +485,7 @@ impl PositionMatch {
     ///     simbad_oid: Some(1_575_544), primary_designation: "M 31".to_owned(),
     ///     common_name: None, object_type: ObjectType::Galaxy, otype_raw: "G".to_owned(),
     ///     ra_deg: 10.684_708, dec_deg: 41.268_75, v_mag: Some(3.44),
+    ///     galdim_majaxis_arcmin: None, galdim_minaxis_arcmin: None, galdim_angle_deg: None,
     ///     aliases: vec![ResolvedAlias::new("M 31", AliasKind::Designation)],
     ///     source: TargetSource::Resolved,
     /// };

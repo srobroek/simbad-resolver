@@ -26,6 +26,9 @@ fn m31() -> ResolvedIdentity {
         ra_deg: 10.684_708,
         dec_deg: 41.268_75,
         v_mag: Some(3.44),
+        galdim_majaxis_arcmin: Some(199.53),
+        galdim_minaxis_arcmin: Some(70.79),
+        galdim_angle_deg: Some(35),
         aliases: vec![
             ResolvedAlias::new("M 31", AliasKind::Designation),
             ResolvedAlias::new("NGC 224", AliasKind::Designation),
@@ -151,6 +154,9 @@ async fn caldwell_query_translates_and_binds_alias() {
         ra_deg: 34.75,
         dec_deg: 57.13,
         v_mag: None,
+        galdim_majaxis_arcmin: None,
+        galdim_minaxis_arcmin: None,
+        galdim_angle_deg: None,
         aliases: vec![ResolvedAlias::new("NGC 869", AliasKind::Designation)],
         source: TargetSource::Resolved,
     };

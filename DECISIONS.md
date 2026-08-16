@@ -41,6 +41,18 @@ the maintainer's input. Newest at the top of each section.
 
 ## Autonomous decisions
 
+- **`galdim_majaxis`/`galdim_minaxis`/`galdim_angle` cache-compat via
+  `#[serde(default)]`, not a schema-version bump.** Added SIMBAD's angular-size
+  columns (`ResolvedIdentity`/`CachedTarget` gain
+  `galdim_majaxis_arcmin: Option<f64>`, `galdim_minaxis_arcmin: Option<f64>`,
+  `galdim_angle_deg: Option<i16>`, units unconverted). The requesting task
+  assumed an explicit cache schema-version field; the crate has no such
+  mechanism — it already relies on per-field `#[serde(default)]` on
+  `StoredTarget` for forward-compat (`v_mag` set this precedent). Reused that
+  existing convention instead of introducing new versioning infrastructure;
+  proven by `galdim_pre_upgrade_row_deserializes_with_none` in
+  `src/cache/redb.rs`, which writes a pre-upgrade-shaped JSON blob directly into
+  the `targets` table and reads it back through the current `Cache::get_by_id`.
 - **Deviated from the full SpecKit implementation DAG** (tasks → checklist →
   analyze → agent-assign → verify → review → …) in favour of a direct,
   test-driven crate-by-crate build, because the goal is "take to completion,
